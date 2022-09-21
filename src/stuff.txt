@@ -1,0 +1,156 @@
+// if_statement : IF '(' expression ')' statement %prec NOELSE { }
+//              | IF '(' expression ')' statement ELSE statement { }
+//              | RETURN NUMBER ';' {
+//                  char *buffer = malloc(100);
+//                  sprintf(buffer, "return %d;", $2);
+// 		             $$ = buffer; }
+//              ;
+
+// if_statement : open_statement
+//              | close_statement
+//              ;
+
+// open_statement : IF '(' expression ')' statement
+//                | IF '(' expression ')' close_statement ELSE open_statement 
+//                ;
+
+// close_statement : IF '(' expression ')' close_statement ELSE close_statement
+//                 | statement
+//                 ;
+
+
+%code requires{
+  #include "ast.hpp"
+  #include <iostream>
+  #include <cassert>
+
+  extern const Node *g_root; // A way of getting the AST out
+  
+  int yylex(void);
+  void yyerror(const char *);
+}
+
+%union{
+    Node* expr;
+    std::string *string;
+    double number;
+    CompoundStatement* statementList;
+    ParameterList* paramList;
+}
+
+%token IDENTIFIER INT_LITERAL STRING_LITERAL FLOAT_LITERAL CHAR_LITERAL
+%token PTR_OP INC_OP DEC_OP LEFT_OP RIGHT_OP LE_OP GE_OP EQ_OP NEQ_OP
+%token AND_OP OR_OP MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN
+%token SUB_ASSIGN LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN
+%token XOR_ASSIGN OR_ASSIGN 
+
+%token TYPEDEF EXTERN STATIC AUTO REGISTER
+%token CHAR INT VOID
+%token STRUCT ENUM
+
+%token CASE DEFAULT IF ELSE SWITCH WHILE DO FOR CONTINUE BREAK RETURN
+
+%type <expr> primary_expression unary_expression
+%type <expr> additive_expression multiplicative_expression shift_expression
+%type <expr> relational_expression equality_expression and_expression 
+%type <expr> exclusive_or_expression inclusive_or_expression logical_and_expression logical_or_expression
+%type <expr> conditional_expression assignment_expression expression constant_expression cast_expression
+
+%type <expr> assignment_operator identifier_list
+
+%type <expr> declaration declaration_specifiers init_declarator struct_declaration_list
+%type <expr> struct_declaration enum_specifier enum_list enumerator declarator struct_declarator 
+%type <expr> specifier_qualifier_list pointer direct_declarator declaration_list
+
+%type <expr> function_definition translation_unit external_declaration
+
+%type <expr> if_statement while_statement for_statement switch_statement case_statement
+%type <expr> statement_list skip_statement expression_statement
+%type <expr> top statement  brackets
+%type <expr> parameter_declaration parameter_type_list
+%type <string> type_specifier
+
+%type <statementList> compound_statement
+%type <paramList> parameter_list
+
+%type <number> INT_LITERAL
+%type <string> IDENTIFIER CHAR_LITERAL
+%type <string> INT VOID
+
+%start top
+
+%%
+
+
+top : translation_unit { g_root = $1; }
+
+translation_unit : external_declaration { $$ = new translation_unit($1);}
+                 | translation_unit external_declaration { $$ = new translation_unit($2);}
+                 ;
+
+external_declaration : function_definition { $$ = $1; }
+                     ;
+
+
+function_definition : type_specifier direct_declarator '(' ')' brackets {$$ = new Function(*$1,$2,$5);}
+                    | type_specifier direct_declarator '(' parameter_list ')' brackets {$$ = new Function(*$1,$2,$4,$6);}
+                    ;
+
+type_specifier : INT { $$ = new std::string("int"); }
+               ;
+
+
+direct_declarator : IDENTIFIER  {$$ = new Variable(*$1); }
+                  | direct_declarator '(' ')' {$$ = $1;}
+                  | direct_declarator '('parameter_list')' {$$ = new Direct_Declarator($1, $3);}
+                  ;
+
+parameter_list : parameter_declaration {$$ = new ParameterList($1);}
+               | parameter_list ',' parameter_declaration {$$ -> AddParam($3);}
+               ;
+
+brackets : '{' compound_statement '}' {$$ = $2;}
+
+compound_statement : statement {$$ = new CompoundStatement($1);}
+                   | compound_statement statement {$$ -> AddStatement($2);}
+                   ;
+
+statement : skip_statement {$$ = $1;}
+          | expression_statement {$$ = $1;}
+          ;
+
+skip_statement : RETURN expression_statement {$$ = new ReturnStatement($2); }
+               ;
+
+expression_statement : ';'
+                     | expression';' {$$ = $1;}
+                     ;
+
+expression : direct_declarator '=' expression {$$ = new VarDeclaration($1,$3);}
+           | INT_LITERAL {$$ = new Constant($1);}
+           | type_specifier direct_declarator {$$ = new Declaration_Specifier(*$1, $2);}
+           | IDENTIFIER {$$ = new Variable(*$1);}
+           | expression '+' expression {$$ = new AddOperator($1, $3);}
+           | type_specifier IDENTIFIER '[' INT_LITERAL ']' 
+           ;
+
+parameter_declaration : type_specifier expression {$$ = new ParameterSpecifier(*$1, $2);}
+                      ;
+
+multiplicative_expression : INT_LITERAL {$$ = new Constant($1);}
+
+additive_expression : multiplicative_expression {$$ = $1;}
+                    | additive_expression '+' multiplicative_expression {$$ = new AddOperator($1, $3);}
+                    | additive_expression '-' multiplicative_expression {$$ = new SubOperator($1, $3);}
+                    ;
+
+%%
+
+const Node *g_root; // Definition of variable (to match declaration earlier)
+
+const Node *parseAST()
+{
+  g_root=0;
+  yyparse();
+  return g_root;
+}
